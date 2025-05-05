@@ -177,9 +177,10 @@ where
              *    distance = (H << 2) + D + 2049
              */
             n_state = (inst & 0x3) as usize;
-            lbcur = (result.len() as u64)
-                - (((u32::from(inst) >> 2) + (u32::from(reader.read_u8()?) << 2) + 2049) as isize)
-                    as u64;
+            lbcur = (result.len() as u64).wrapping_sub(
+                (((u32::from(inst) >> 2) + (u32::from(reader.read_u8()?) << 2) + 2049) as isize)
+                    as u64,
+            );
             lblen = 3;
         }
 
