@@ -76,10 +76,11 @@ where
              * Always followed by exactly one byte : H H H H H H H H
              *   distance = (H << 3) + D + 1
              */
-            lbcur = result.len() as u64
-                - u64::from(
+            lbcur = (result.len() as u64)
+                .checked_sub(u64::from(
                     (u32::from(reader.read_u8()?) << 3) + ((u32::from(inst) >> 2) & 0x7) + 1,
-                );
+                ))
+                .ok_or(crate::Error::Unknown)?;
             lblen = ((inst >> 5) as usize) + 1;
             n_state = (inst & 0x3) as usize;
         } else if (u32::from(inst) & M3_MARKER) != 0 {
@@ -97,7 +98,9 @@ where
                 lblen += (offset * 255 + 31 + u64::from(reader.read_u8()?)) as usize;
             }
             n_state = reader.read_u16::<LittleEndian>()? as usize;
-            lbcur = result.len() as u64 - ((n_state >> 2).wrapping_add(1) as u64);
+            lbcur = (result.len() as u64)
+                .checked_sub((n_state >> 2).wrapping_add(1) as u64)
+                .ok_or(crate::Error::Unknown)?;
             n_state &= 0x3;
         } else if u32::from(inst) & M4_MARKER != 0 {
             /* [M4]
@@ -116,15 +119,18 @@ where
             }
             n_state = reader.read_u16::<LittleEndian>()? as usize;
 
-            lbcur = (result.len() as u64).wrapping_sub(
-                ((i32::from(inst & 0x8) << 11) as u64).wrapping_add((n_state >> 2_usize) as u64),
-            );
+            lbcur = (result.len() as u64)
+                .checked_sub(
+                    ((i32::from(inst & 0x8) << 11) as u64)
+                        .wrapping_add((n_state >> 2_usize) as u64),
+                )
+                .ok_or(crate::Error::Unknown)?;
 
             n_state &= 0x3;
             if lbcur == result.len() as u64 {
                 break;
             }
-            lbcur -= 16384;
+            lbcur = lbcur.checked_sub(16384).ok_or(crate::Error::Unknown)?;
         } else if state == 0 {
             /* [M1] Depends on the number of literals copied by the last instruction. */
             /* If last instruction did not copy any literal (state == 0), this
@@ -160,10 +166,12 @@ where
              */
             n_state = (u32::from(inst) & 0x3) as usize;
 
-            lbcur = (result.len() as u64).wrapping_sub(u64::from(
-                (u32::from(inst) >> 2)
-                    .wrapping_add((u32::from(reader.read_u8()?) << 2).wrapping_add(1)),
-            ));
+            lbcur = (result.len() as u64)
+                .checked_sub(u64::from(
+                    (u32::from(inst) >> 2)
+                        .wrapping_add((u32::from(reader.read_u8()?) << 2).wrapping_add(1)),
+                ))
+                .ok_or(crate::Error::Unknown)?;
             lblen = 2;
         } else {
             /* If last instruction used to copy 4 or more literals (as detected by
@@ -177,15 +185,19 @@ where
              *    distance = (H << 2) + D + 2049
              */
             n_state = (inst & 0x3) as usize;
-            lbcur = (result.len() as u64).wrapping_sub(
-                (((u32::from(inst) >> 2) + (u32::from(reader.read_u8()?) << 2) + 2049) as isize)
-                    as u64,
-            );
+            lbcur = (result.len() as u64)
+                .checked_sub(
+                    (((u32::from(inst) >> 2) + (u32::from(reader.read_u8()?) << 2) + 2049) as isize)
+                        as u64,
+                )
+                .ok_or(crate::Error::Unknown)?;
             lblen = 3;
         }
 
         for i in 0..lblen {
-            let val = result[lbcur as usize + i];
+            let Some(&val) = result.get(lbcur as usize + i) else {
+                return Err(crate::Error::Unknown);
+            };
             result.write_u8(val)?;
         }
 
